@@ -3,58 +3,46 @@ const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
-
-// Standard middleware
 app.use(cors());
 app.use(express.json());
 
 app.post('/run-java', async (req, res) => {
     const { code } = req.body;
-
-    if (!code) {
-        return res.status(400).json({ error: "No code provided" });
-    }
+    if (!code) return res.status(400).json({ error: "No code provided" });
 
     try {
-        // We use version: "*" to ensure it uses whatever Java version is currently installed
+        // CHANGED: Using the primary piston.rs domain instead of emacs.piston.rs
+        const PISTON_URL = 'https://piston.rs/api/v2/execute';
+        
         const payload = {
             language: "java",
             version: "*", 
-            files: [
-                {
-                    name: "Main.java",
-                    content: code
-                }
-            ]
+            files: [{ name: "Main.java", content: code }]
         };
 
-        console.log("Sending request to Piston API...");
+        console.log("Attempting to connect to Piston at:", PISTON_URL);
         
-        const response = await axios.post('https://emacs.piston.rs/api/v2/execute', payload, {
-            timeout: 15000 // 15 second timeout
-        });
-
-        console.log("Piston API responded successfully");
+        const response = await axios.post(PISTON_URL, payload, { timeout: 15000 });
         res.json(response.data);
 
     } catch (error) {
-        // Detailed logging for your Render Console
-        console.error("Compiler Bridge Error:", error.message);
-        if (error.response) {
-            console.error("Piston Error Data:", error.response.data);
+        console.error("Bridge Error:", error.message);
+        
+        // If piston.rs fails, try the older direct IP/subdomain as a final fallback
+        try {
+            console.log("Main API failed, trying fallback...");
+            const fallback = await axios.post('https://piston.rs/api/v2/execute', payload, { timeout: 10000 });
+            return res.json(fallback.data);
+        } catch (fallbackError) {
+            res.status(500).json({ 
+                error: "Compiler connection failed", 
+                details: error.message 
+            });
         }
-
-        res.status(500).json({ 
-            error: "Compiler connection failed", 
-            details: error.message 
-        });
     }
 });
 
-// Health check endpoint (helpful for Render)
 app.get('/', (req, res) => res.send("Java Bridge is Online"));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
